@@ -31,7 +31,7 @@ locals {
 }
 
 module "machine_learning_project" {
-  source = "../single_project"
+  source = "../ml_single_project"
 
   org_id                             = local.org_id
   billing_account                    = local.billing_account
@@ -114,6 +114,8 @@ module "machine_learning_project" {
   primary_contact   = "example@example.com"
   secondary_contact = "example2@example.com"
   business_code     = var.business_code
+
+  environment_kms_project_id = local.environment_kms_project_id
 }
 
 
