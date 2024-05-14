@@ -23,7 +23,7 @@
 #   ]
 # }
 module "app_cloudbuild_project" {
-  source = "../single_project"
+  source = "../ml_single_project"
 
   org_id              = local.org_id
   billing_account     = local.billing_account
@@ -84,6 +84,7 @@ module "app_cloudbuild_project" {
       "roles/compute.admin",
     ],
   }
+  environment_kms_project_id = local.environment_kms_project_id
 }
 
 # resource "google_kms_crypto_key_iam_member" "app_key" {
