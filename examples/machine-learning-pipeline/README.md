@@ -676,12 +676,16 @@ The `GITHUB_REMOTE_URI` value can be retrieved by creating a new github reposito
 
 1. Update `common.auto.tfvars` file with values from your environment.
 
-1. Use `terraform output` to get the project backend bucket value from 0-bootstrap.
+1. Use `terraform output` to get the project and seed backend bucket value from 0-bootstrap.
 
    ```bash
    export remote_state_bucket=$(terraform -chdir="../../0-bootstrap/" output -raw projects_gcs_bucket_tfstate)
    echo "remote_state_bucket = ${remote_state_bucket}"
    sed -i "s/REMOTE_STATE_BUCKET/${remote_state_bucket}/" ./common.auto.tfvars
+
+   export seed_state_bucket=$(terraform -chdir="../../0-bootstrap/" output -raw gcs_bucket_tfstate)
+   echo "seed_state_bucket = ${seed_state_bucket}"
+   sed -i "s/REPLACE_SEED_TFSTATE_BUCKET/${seed_state_bucket}/" ./common.auto.tfvars
    ```
 
 1. Provide the user that will be running `./tf-wrapper.sh` the Service Account Token Creator role to the ml Terraform service account.
@@ -720,6 +724,57 @@ The `GITHUB_REMOTE_URI` value can be retrieved by creating a new github reposito
    sed -i "s/SERVICE_CATALOG_PROJECT_ID/${service_catalog_project_id}/g" ./modules/base_env/main.tf
    ```
 
+1. Update `vpc_project` variable with the development environment host VPC project.
+
+   ```bash
+   export vpc_project=$(terraform -chdir="../../3-networks-dual-svpc/envs/development" output -raw restricted_host_project_id)
+   echo $vpc_project
+
+   ## Linux
+   sed -i "s/REPLACE_WITH_DEV_VPC_PROJECT/${vpc_project}/g" ./modules/base_env/main.tf
+   ```
+
+1. Update `intance_owners` variable with you GCP user account email. Replace `INSERT_YOUR_USER_EMAIL_HERE` with your email.
+
+   ```bash
+   export user_email="INSERT_YOUR_USER_EMAIL_HERE"
+
+   ## Linux
+   sed -i "s/REPLACE_WITH_USER_GCP_EMAIL/${user_email}/g" ./modules/base_env/main.tf
+   ```
+
+1. Enable the Artifact Registry API for the `cloudbuild project`.
+
+  ```bash
+  export cloudbuild_project_id=$(terraform -chdir="../../4-projects/ml_business_unit/shared" output -raw cloudbuild_project_id) 
+  echo $cloudbuild_project_id
+
+  gcloud services enable accesscontextmanager.googleapis.com --project=$cloudbuild_project_id
+  ```
+
+1. Retrieve the value for "sa-tf-cb-ml-machine-learning@[prj_c_ml_infra_pipeline_project_id].iam.gserviceaccount.com" on your environment by running:
+
+  ```bash
+  export ml_cb_sa=$(terraform -chdir="../../4-projects/ml_business_unit/shared" output -json terraform_service_accounts | jq -r '."ml-machine-learning"')
+  echo $ml_cb_sa
+  ```
+
+1. Assign Storage Object Viewer on bucket:
+
+  ```bash
+  gcloud storage buckets add-iam-policy-binding gs://$seed_state_bucket \
+          --member=serviceAccount:$ml_cb_sa \
+          --role=roles/storage.objectViewer
+  ```
+
+1. Assign Artifact Registry Admin on publish artifacts project:
+
+  ```bash
+  gcloud projects add-iam-policy-binding $common_artifacts_project_id \
+          --member=serviceAccount:$ml_cb_sa \
+          --role=roles/artifactregistry.admin
+  ```
+
 We will now deploy each of our environments (development/production/non-production) using this script.
 When using Cloud Build or Jenkins as your CI/CD tool, each environment corresponds to a branch in the repository for the `machine-learning-pipeline` step. Only the corresponding environment is applied.
 
@@ -741,11 +796,12 @@ To use the `validate` option of the `tf-wrapper.sh` script, please follow the [i
    ./tf-wrapper.sh init production
    ./tf-wrapper.sh plan production
    ```
+- In case you face some error related to Source Repo authentication, you need to access your Service Catalog repository `prj-c-mlservice-catalog-ID` `https://source.cloud.google.com/<service_catalog_project_id>/service-catalog` hit the `Clone` button in the right side -> how to setup -> Manually generated credentials and then follow the instructions in the step one `Generate and store your Git credentials`. Then, re-run the previous step again.
 
 1. Run `validate` and check for violations.
 
    ```bash
-   ./tf-wrapper.sh validate production $(pwd)/../policy-library ${INFRA_PIPELINE_PROJECT_ID}
+   ./tf-wrapper.sh validate production $(pwd)/../../policy-library ${INFRA_PIPELINE_PROJECT_ID}
    ```
 
 1. Run `apply` production.
@@ -764,7 +820,7 @@ To use the `validate` option of the `tf-wrapper.sh` script, please follow the [i
 1. Run `validate` and check for violations.
 
    ```bash
-   ./tf-wrapper.sh validate non-production $(pwd)/../policy-library ${INFRA_PIPELINE_PROJECT_ID}
+   ./tf-wrapper.sh validate non-production $(pwd)/../../policy-library ${INFRA_PIPELINE_PROJECT_ID}
    ```
 
 1. Run `apply` non-production.
@@ -783,7 +839,7 @@ To use the `validate` option of the `tf-wrapper.sh` script, please follow the [i
 1. Run `validate` and check for violations.
 
    ```bash
-   ./tf-wrapper.sh validate development $(pwd)/../policy-library ${INFRA_PIPELINE_PROJECT_ID}
+   ./tf-wrapper.sh validate development $(pwd)/../../policy-library ${INFRA_PIPELINE_PROJECT_ID}
    ```
 
 1. Run `apply` development.
@@ -973,7 +1029,48 @@ Also make sure to have a gcs bucket ready to store the artifacts for the tutoria
 
 - Click the Git Icon and clone the repository you created, select the development branch.
 
-- Navigate to the directory that contains `census_pipeline.ipynb` file and run [the notebook](https://github.com/GoogleCloudPlatform/terraform-google-enterprise-genai/blob/main/examples/machine-learning-pipeline/assets/Vertexpipeline/census_pipeline.ipynb) cell by cell. Pay attention to the instructions and comments in the notebook and don't forget to set the correct values corresponding to your development project. In case a message pops up asking what kernel to use, choose Python 3.
+- Export the email address that will be used to monitor the configuration in the notebook. To do this, execute the following code:
+
+```bash
+   export your_monitoring_email="YOUR-EMAIL@YOUR-COMPANY.COM"
+   echo $your_monitoring_email
+```
+
+- In the next step, you can use the following commands to update the placeholders used in the file `census_pipeline.ipynb`.
+
+```bash
+  export prj_d_machine_learning_project_id=$(terraform -chdir="../../4-projects/ml_business_unit/development" output -raw machine_learning_project_id)
+  echo $prj_d_machine_learning_project_id
+
+  export prj_d_machine_learning_project_number=$(terraform -chdir="../../4-projects/ml_business_unit/development" output -raw machine_learning_project_number)
+  echo $prj_d_machine_learning_project_number
+
+  export prj_d_shared_restricted_id=$(terraform -chdir="../../3-networks-dual-svpc/envs/development" output -raw restricted_host_project_id)
+  echo $prj_d_shared_restricted_id
+
+  export prj_d_kms_id=$(terraform -chdir="../../2-environments/envs/development" output -raw env_kms_project_id)
+  echo $prj_d_kms_id
+
+  export common_artifacts_project_id=$(terraform -chdir="../../4-projects/ml_business_unit/shared" output -raw common_artifacts_project_id)
+  echo $common_artifacts_project_id
+
+  export development_bucket_name=$(gcloud storage buckets list --project $prj_d_machine_learning_project_id --format="value(name)" |grep bkt)
+  echo $development_bucket_name
+
+
+  sed -i \
+    -e "s/MACHINE_LEARNING_PROJECT_ID/$prj_d_machine_learning_project_id/g" \
+    -e "s/MACHINE_LEARNING_PROJECT_BUCKET_ID/$development_bucket_name/g" \
+    -e "s/YOUR_PROJECT_D_SHARED_ID/$prj_d_shared_restricted_id/g" \
+    -e "s/MACHINE_LEARNING_PROJECT_NUMBER/$prj_d_machine_learning_project_number/g" \
+    -e "s/KMS_D_PROJECT_ID/$prj_d_kms_id/g" \
+    -e "s/PRJ_C_ML_ARTIFACTS_ID/$common_artifacts_project_id/g" \
+    -e "s/YOUR-EMAIL@YOUR-COMPANY.COM/$your_monitoring_email/g" \
+    ./assets/Vertexpipeline/census_pipeline.ipynb
+```
+
+- Navigate to the directory that contains `census_pipeline.ipynb` file and execute [the notebook](https://github.com/GoogleCloudPlatform/terraform-google-enterprise-genai/blob/main/examples/machine-learning-pipeline/assets/Vertexpipeline/census_pipeline.ipynb) cell by cell. Pay attention to the instructions and comments in the notebook, ensuring that you set the correct values for your development project. If a message pops up asking which kernel to use, select Python 3.
+
 
 #### 2. Configure cloud build
 
@@ -1018,7 +1115,7 @@ echo $common_artifacts_project_id
 
 sed -e "s#{your-bucket-name}#$non_prod_bucket_name#g" \
     -e "s#{your-artifact-project}#$common_artifacts_project_id#g" \
-../terraform-google-enterprise-genai/examples/machine-learning-pipeline/assets/cloudbuild.yaml > cloudbuild.yaml
+../terraform-google-enterprise-genai/examples/machine-learning-pipeline/assets/Vertexpipeline/cloudbuild.yaml > cloudbuild.yaml
 ```
 
 - Optionally, if you want to schedule pipeline runs on regular intervals, uncomment the last two steps and replace the composer bucket with the name of your composer's bucket. The first step uploads the pipeline's yaml to the bucket and the second step uploads the dag to read that yaml and trigger the vertex pipeline:
@@ -1105,7 +1202,7 @@ sed -e "s#{prj-c-mlartifacts-id}#$common_artifacts_project_id#g" \
     -e "s#{prod_project_number}#$prj_p_machine_learning_project_number#g" \
     -e "s#{prj-p-mlmachine-learning-id}#$prj_p_machine_learning_project_id#g" \
     -e "s#{prj-p-kms-id}#$prj_p_kms_id#g" \
-../terraform-google-enterprise-genai/examples/machine-learning-pipeline/assets/runpipeline.py > runpipeline.py
+../terraform-google-enterprise-genai/examples/machine-learning-pipeline/assets/Vertexpipeline/runpipeline.py > runpipeline.py
 ```
 
 Remember to update the `monitoring_config` parameter in the `runpipeline.py` to the email that will be used.
@@ -1133,7 +1230,7 @@ echo $non_prod_bucket_name
 sed -e "s#{your-bucket-name}#$non_prod_bucket_name#g" \
     -e "s#{your-artifact-project}#$common_artifacts_project_id#g" \
     -e "s#{prj-n-mlmachine-learning-id}#$prj_n_machine_learning_project_id#g" \
-../terraform-google-enterprise-genai/examples/machine-learning-pipeline/assets/compile_pipeline.py > compile_pipeline.py
+../terraform-google-enterprise-genai/examples/machine-learning-pipeline/assets/Vertexpipeline/compile_pipeline.py > compile_pipeline.py
 ```
 
 #### 3. Configure variables in compile_pipeline.py and runpipeline.py
