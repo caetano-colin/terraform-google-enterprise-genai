@@ -21,6 +21,11 @@ For more information about the technologies used in this example, please refer t
 - [Vertex AI Vector Search Overview](https://cloud.google.com/vertex-ai/docs/vector-search/overview)
 - [Ragas Documentation](https://docs.ragas.io/en/stable/)
 
+After ensuring all requirements are satisfied you can follow one of the two deployment options:
+
+1. [**Using Machine Learning Infra Pipeline**](#deploying-infrastructure-using-machine-learning-infra-pipeline): This is a robust option suitable for production environments and continuous deployment scenarios.
+2. [**Using Terraform Locally**](#deploying-infrastructure-using-terraform-locally): This is a better option for one-time testing purposes where you know you will delete the example later.
+
 ## Requirements
 
 - Terraform v1.7.5
@@ -97,7 +102,7 @@ For more information about the technologies used in this example, please refer t
       EOF
       ```
 
-    - Validate if all values are corrent in `terraform.tfvars`
+    - Validate if all values are correct in `terraform.tfvars`
 
       ```bash
       cat terraform-google-enterprise-genai/examples/genai-rag-multimodal/terraform.tfvars
@@ -183,7 +188,8 @@ For more information about the technologies used in this example, please refer t
 
 - Create a file named `genai_example.tf` under `ml_business_unit/development` path that calls the module.
 
-  ```terraform
+  ```bash
+  cat > ml_business_unit/development/genai_example.tf <<EOF
   module "genai_example" {
     source = "../../modules/genai-rag-multimodal"
 
@@ -193,23 +199,26 @@ For more information about the technologies used in this example, please refer t
     machine_learning_project  = var.machine_learning_project
     vector_search_vpc_project = var.vector_search_vpc_project
   }
+  EOF
   ```
 
 - Verify if `backend.tf` file exists at `ml-machine-learning/ml_business_unit/development`.
-  - If there is a `backend.tf` file, proceed with the next step and ignore the sub-steps below.
+  - If there is a `backend.tf` file, proceed with the next step (commit and push) and ignore the sub-steps below.
   - If there is no `backend.tf` file, follow the sub-steps below:
-    - Create the file and put the following content into it:
+    - Create the file by running the command below:
 
-      ```terraform
+      ```bash
+      cat > ml_business_unit/development/backend.tf <<EOF
       terraform {
         backend "gcs" {
           bucket = "UPDATE_APP_INFRA_BUCKET"
           prefix = "terraform/app-infra/ml_business_unit/development"
         }
       }
+      EOF
       ```
 
-    - Run the command below to update `UPDATE_APP_INFRA_BUCKET`:
+    - Run the command below to update `UPDATE_APP_INFRA_BUCKET` placeholder:
 
       ```bash
       export backend_bucket=$(terraform -chdir="../gcp-projects/ml_business_unit/shared/" output -json state_buckets | jq '."ml-machine-learning"' --raw-output)
@@ -265,6 +274,8 @@ When running the Notebook, you will reach a step that downloads an example PDF f
 },
 ```
 
+> **IMPORTANT**: If you are planning to delete the notebook-runner service account at any moment, make sure you remove this policy before deleting it.
+
 ## Usage
 
 Once all the requirements are set up, you can start by running and adjusting the notebook step-by-step.
@@ -279,7 +290,7 @@ After clicking "open JupyterLab" button, you will be taken to an interactive Jup
 
 If you ran using Cloud Build, proceed with the steps below to use `terraform output`.
 
-- Update `outputs.tf` file on `ml-machine-learning/ml_business_unit/development` with the following values:
+- Update `outputs.tf` file on `ml-machine-learning/ml_business_unit/development` and add the following values to it, if the file does not exist create it:
 
   ```terraform
   output "private_endpoint_ip_address" {
@@ -326,9 +337,11 @@ If you ran using Cloud Build, proceed with the steps below to use `terraform out
   echo host_vpc_network=$host_vpc_network
   ```
 
-- Search and Replace using `sed` command.
+- Search and Replace using `sed` command at `terraform-google-enterprise-genai/examples/genai-rag-multimodal`.
 
   ```bash
+  cd ../../../terraform-google-enterprise-genai/examples/genai-rag-multimodal
+
   sed -i "s/<INSERT_PRIVATE_IP_VALUE_HERE>/$private_endpoint_ip_address/g" multimodal_rag_langchain.ipynb
 
   sed -i "s/<INSERT_HOST_VPC_PROJECT_ID>/$host_vpc_project_id/g" multimodal_rag_langchain.ipynb
